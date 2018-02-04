@@ -23,5 +23,10 @@ namespace ElasticSearchForNetCommunity
 
         [Number(NumberType.ScaledFloat, Name = "scaledFloat", ScalingFactor = 100)]
         public float ScaledFloat { get; set; }
+
+        public override string ToString()
+        {
+            return $"{nameof(Id)}: {Id}, {nameof(Number)}: {Number}, {nameof(Text)}: {Text}, {nameof(Position)}: {Position}, {nameof(Boolean)}: {Boolean}, {nameof(ScaledFloat)}: {ScaledFloat}";
+        }
     }
 }

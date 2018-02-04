@@ -13,6 +13,7 @@ namespace ElasticSearchForNetCommunity
             // Using InMemoryConnection allows to mock responses - easy for unit tests
             // var connection = new InMemoryConnection();
             var settings = new ConnectionSettings(new SingleNodeConnectionPool(new Uri("http://localhost:9200")));
+            settings.EnableDebugMode();
             var client = new ElasticClient(settings);
             var indexName = "testindex";
             var indexDescriptor =  new CreateIndexDescriptor(indexName)
@@ -28,26 +29,41 @@ namespace ElasticSearchForNetCommunity
             {
                 var createIndexResponse = await client.CreateIndexAsync(indexDescriptor);
                 HandleErrors(createIndexResponse);
-            }
 
-            var models = new List<IndexModel>();
-            var random = new Random();
-            for (int i = 0; i < 10_000; i++)
-            {
-                var newModel = new IndexModel
+                var models = new List<IndexModel>();
+                var random = new Random();
+                for (int i = 0; i < 10_000; i++)
                 {
-                    Id = Guid.NewGuid(),
-                    Boolean = random.NextDouble() >= 0.5,
-                    Number = random.Next(),
-                    Text = "Test Text",
-                    Position = new GeoCoordinate(random.NextDouble(), random.NextDouble()),
-                    ScaledFloat = (float) random.NextDouble()
-                };
-                models.Add(newModel);
+                    var newModel = new IndexModel
+                    {
+                        Id = Guid.NewGuid(),
+                        Boolean = random.NextDouble() >= 0.5,
+                        Number = random.Next(),
+                        Text = "Test Text",
+                        Position = new GeoCoordinate(random.NextDouble(), random.NextDouble()),
+                        ScaledFloat = (float) random.NextDouble()
+                    };
+                    models.Add(newModel);
+                }
+
+                var response = await client.IndexManyAsync(models, indexName);
+                HandleErrors(response);
             }
 
-            var response = await client.IndexManyAsync(models, indexName);
-            HandleErrors(response);
+            var searchResult =
+                await client.SearchAsync<IndexModel>(sr => sr.Index(indexName).Size(100).Query(qc =>
+                    qc.Bool(bc => bc.Must(
+                        q => q.Term(t => t.Field(e => e.Boolean).Value(true)),
+                        q => q.Fuzzy(f => f.Field(e => e.Text).Value("Telt").Fuzziness(Fuzziness.Ratio(85)))
+                    ))));
+            HandleErrors(searchResult);
+            foreach (var document in searchResult.Documents)
+            {
+                Console.WriteLine(document.ToString());
+            }
+
+            Console.WriteLine("Press any key to continues...");
+            Console.ReadKey();
         }
 
         static void HandleErrors(IResponse response)

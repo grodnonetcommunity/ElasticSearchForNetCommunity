@@ -1,5 +1,27 @@
-GET http://localhost:9200/_search/ HTTP/1.1
+GET http://localhost:9200/testindex/IndexModel/_search/ HTTP/1.1
 content-type: application/json
 
 {
+  "size": 100,
+  "query": {
+    "bool": {
+      "must": [
+        {
+          "term": {
+            "boolean": {
+              "value": true
+            }
+          }
+        },
+        {
+          "fuzzy": {
+            "text": {
+              "value": "Telt",
+              "fuzziness": 85.0
+            }
+          }
+        }
+      ]
+    }
+  }
 }
