@@ -52,25 +52,35 @@ namespace ElasticSearchForNetCommunity
             }
 
             var size = 100;
-            var searchResult =
-                await client.SearchAsync<IndexModel>(sr => sr.Index(indexName).Size(size).Scroll("1m").Query(qc =>
-                    qc.Bool(bc => bc.Must(
-                        q => q.Term(t => t.Field(e => e.Boolean).Value(true)),
-                        q => q.Fuzzy(f => f.Field(e => e.Text).Value("Telt").Fuzziness(Fuzziness.Ratio(85)))
-                    ))));
-            HandleErrors(searchResult);
-            foreach (var document in searchResult.Documents)
+            var tasks = new List<Task>();
+            for (int i = 0; i < Environment.ProcessorCount; i++)
             {
-                Console.WriteLine(document.ToString());
+                var sliceId = i;
+                tasks.Add(Task.Run(async () =>
+                {
+                    var searchResult =
+                        await client.SearchAsync<IndexModel>(sr => sr.Index(indexName).Size(size).Slice(s => s.Id(sliceId).Max(Environment.ProcessorCount)).Scroll("1m").Query(
+                            qc =>
+                                qc.Bool(bc => bc.Must(
+                                    q => q.Term(t => t.Field(e => e.Boolean).Value(true)),
+                                    q => q.Fuzzy(f => f.Field(e => e.Text).Value("Telt").Fuzziness(Fuzziness.Ratio(85)))
+                                ))));
+                    HandleErrors(searchResult);
+                    foreach (var document in searchResult.Documents)
+                    {
+                        Console.WriteLine(document.ToString());
+                    }
+
+                    var scrollId = searchResult.ScrollId;
+                    while (searchResult.Documents.Any())
+                    {
+                        searchResult = await client.ScrollAsync<IndexModel>("1m", scrollId);
+                        scrollId = searchResult.ScrollId;
+                    }
+                }));
             }
 
-            var scrollId = searchResult.ScrollId;
-            while (searchResult.Documents.Any())
-            {
-                searchResult = await client.ScrollAsync<IndexModel>("1m", scrollId);
-                scrollId = searchResult.ScrollId;
-            }
-
+            await Task.WhenAll(tasks);
             Console.WriteLine("Press any key to continues...");
             Console.ReadKey();
         }
