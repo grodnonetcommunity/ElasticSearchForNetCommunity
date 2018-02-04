@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Elasticsearch.Net;
 using Nest;
@@ -50,8 +51,9 @@ namespace ElasticSearchForNetCommunity
                 HandleErrors(response);
             }
 
+            var size = 100;
             var searchResult =
-                await client.SearchAsync<IndexModel>(sr => sr.Index(indexName).Size(100).Query(qc =>
+                await client.SearchAsync<IndexModel>(sr => sr.Index(indexName).Size(size).Scroll("1m").Query(qc =>
                     qc.Bool(bc => bc.Must(
                         q => q.Term(t => t.Field(e => e.Boolean).Value(true)),
                         q => q.Fuzzy(f => f.Field(e => e.Text).Value("Telt").Fuzziness(Fuzziness.Ratio(85)))
@@ -60,6 +62,13 @@ namespace ElasticSearchForNetCommunity
             foreach (var document in searchResult.Documents)
             {
                 Console.WriteLine(document.ToString());
+            }
+
+            var scrollId = searchResult.ScrollId;
+            while (searchResult.Documents.Any())
+            {
+                searchResult = await client.ScrollAsync<IndexModel>("1m", scrollId);
+                scrollId = searchResult.ScrollId;
             }
 
             Console.WriteLine("Press any key to continues...");
