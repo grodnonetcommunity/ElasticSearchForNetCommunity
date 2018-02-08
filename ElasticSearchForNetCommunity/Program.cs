@@ -17,7 +17,7 @@ namespace ElasticSearchForNetCommunity
             settings.EnableDebugMode();
             var client = new ElasticClient(settings);
             var indexName = "testindex";
-            var indexDescriptor =  new CreateIndexDescriptor(indexName)
+            var indexDescriptor = new CreateIndexDescriptor(indexName)
                 .Mappings(ms => ms
                     .Map<IndexModel>(m => m.AutoMap()))
                 .Settings(s =>
@@ -25,62 +25,63 @@ namespace ElasticSearchForNetCommunity
                     s = s.Setting("index.max_result_window", 50_000);
                     return s.NumberOfShards(4);
                 });
-            
-            if (!(await client.IndexExistsAsync(indexName)).Exists)
+
+            if ((await client.IndexExistsAsync(indexName)).Exists)
             {
-                var createIndexResponse = await client.CreateIndexAsync(indexDescriptor);
-                HandleErrors(createIndexResponse);
-
-                var models = new List<IndexModel>();
-                var random = new Random();
-                for (int i = 0; i < 10_000; i++)
-                {
-                    var newModel = new IndexModel
-                    {
-                        Id = Guid.NewGuid(),
-                        Boolean = random.NextDouble() >= 0.5,
-                        Number = random.Next(),
-                        Text = "Test Text",
-                        Position = new GeoCoordinate(random.NextDouble(), random.NextDouble()),
-                        ScaledFloat = (float) random.NextDouble()
-                    };
-                    models.Add(newModel);
-                }
-
-                var response = await client.IndexManyAsync(models, indexName);
-                HandleErrors(response);
+                await client.DeleteIndexAsync(indexName);
             }
 
-            var size = 100;
-            var tasks = new List<Task>();
-            for (int i = 0; i < Environment.ProcessorCount; i++)
-            {
-                var sliceId = i;
-                tasks.Add(Task.Run(async () =>
-                {
-                    var searchResult =
-                        await client.SearchAsync<IndexModel>(sr => sr.Index(indexName).Size(size).Slice(s => s.Id(sliceId).Max(Environment.ProcessorCount)).Scroll("1m").Query(
-                            qc =>
-                                qc.Bool(bc => bc.Must(
-                                    q => q.Term(t => t.Field(e => e.Boolean).Value(true)),
-                                    q => q.Fuzzy(f => f.Field(e => e.Text).Value("Telt").Fuzziness(Fuzziness.Ratio(85)))
-                                ))));
-                    HandleErrors(searchResult);
-                    foreach (var document in searchResult.Documents)
-                    {
-                        Console.WriteLine(document.ToString());
-                    }
+            var createIndexResponse = await client.CreateIndexAsync(indexDescriptor);
+            var topLeftCoordinate = new GeoCoordinate(47.435674, -123.719505);
+            var bottomRightCoordinate = new GeoCoordinate(33.119396, -81.339195);
+            HandleErrors(createIndexResponse);
 
-                    var scrollId = searchResult.ScrollId;
-                    while (searchResult.Documents.Any())
-                    {
-                        searchResult = await client.ScrollAsync<IndexModel>("1m", scrollId);
-                        scrollId = searchResult.ScrollId;
-                    }
-                }));
+            var models = new List<IndexModel>();
+            var random = new Random();
+            for (int i = 0; i < 10_000; i++)
+            {
+                var newModel = new IndexModel
+                {
+                    Id = Guid.NewGuid(),
+                    Boolean = random.NextDouble() >= 0.5,
+                    Number = random.Next(),
+                    Text = "Test Text",
+                    Position = new GeoCoordinate(
+                        random.NextDouble(topLeftCoordinate.Latitude, bottomRightCoordinate.Latitude),
+                        random.NextDouble(topLeftCoordinate.Longitude, bottomRightCoordinate.Longitude)),
+                    ScaledFloat = (float) random.NextDouble()
+                };
+                models.Add(newModel);
             }
 
-            await Task.WhenAll(tasks);
+            var response = await client.IndexManyAsync(models, indexName);
+            HandleErrors(response);
+
+            var searchResult =
+                await client.SearchAsync<IndexModel>(sr => sr.Index(indexName).Size(0)
+                    .Query(
+                        qc =>
+                            qc.Bool(bc => bc.Must(
+                                q => q.GeoBoundingBox(t =>
+                                    t.Field(e => e.Position).BoundingBox(new GeoLocation(47.435674, -123.719505),
+                                        new GeoLocation(40.277535, -102.52935)))
+                            ))).Aggregations(a => a.GeoHash("aggregated_points",
+                        ghg => ghg.Field(e => e.Position).GeoHashPrecision(GeoHashPrecision.Precision11)
+                            .Size(int.MaxValue)
+                            .Aggregations(a1 => a1.Sum("sum_number", sd => sd.Field(e => e.Number))))));
+            HandleErrors(searchResult);
+            foreach (var document in searchResult.Documents)
+            {
+                Console.WriteLine(document.ToString());
+            }
+
+            var scrollId = searchResult.ScrollId;
+            while (searchResult.Documents.Any())
+            {
+                searchResult = await client.ScrollAsync<IndexModel>("1m", scrollId);
+                scrollId = searchResult.ScrollId;
+            }
+
             Console.WriteLine("Press any key to continues...");
             Console.ReadKey();
         }

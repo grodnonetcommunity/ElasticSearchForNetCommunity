@@ -1,0 +1,42 @@
+GET http://localhost:9200/testindex/IndexModel/_search/ HTTP/1.1
+content-type: application/json
+
+{
+  "size": 0,
+  "aggs": {
+    "aggregated_points": {
+      "geohash_grid": {
+        "field": "position",
+        "size": 2147483647,
+        "precision": 11
+      },
+      "aggs": {
+        "sum_number": {
+          "sum": {
+            "field": "number"
+          }
+        }
+      }
+    }
+  },
+  "query": {
+    "bool": {
+      "must": [
+        {
+          "geo_bounding_box": {
+            "position": {
+              "top_left": {
+                "lat": 47.435674,
+                "lon": -123.719505
+              },
+              "bottom_right": {
+                "lat": 40.277535,
+                "lon": -102.52935
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
